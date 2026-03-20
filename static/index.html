@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice AI</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #0f0f0f; color: #e5e5e5;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  height: 100dvh; display: flex; flex-direction: column; align-items: center;
+}
+#app {
+  width: 100%; max-width: 600px; height: 100dvh;
+  display: flex; flex-direction: column; padding: 0 16px 20px;
+}
+
+/* Settings */
+#settings-toggle {
+  background: none; border: none; color: #444; font-size: 11px;
+  cursor: pointer; padding: 8px 0 2px; text-align: left; width: 100%; letter-spacing: 0.05em;
+}
+#settings-toggle:hover { color: #777; }
+#settings-panel { overflow: hidden; transition: max-height 0.2s ease; max-height: 0; }
+#settings-panel.open { max-height: 200px; }
+.s-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.s-label { font-size: 11px; color: #555; min-width: 48px; }
+select {
+  background: #181818; border: 1px solid #2a2a2a; border-radius: 6px;
+  color: #ccc; padding: 5px 8px; font-size: 13px; flex: 1; cursor: pointer; outline: none;
+}
+select:focus { border-color: #444; }
+textarea#sys-prompt {
+  width: 100%; background: #181818; border: 1px solid #2a2a2a; border-radius: 8px;
+  color: #999; font-size: 13px; padding: 8px 10px; resize: none; height: 68px;
+  line-height: 1.5; outline: none; margin-bottom: 4px;
+}
+textarea#sys-prompt:focus { border-color: #444; }
+
+/* Chat */
+#chat {
+  flex: 1; overflow-y: auto; padding: 8px 0;
+  display: flex; flex-direction: column; gap: 12px;
+  scrollbar-width: thin; scrollbar-color: #222 transparent;
+}
+#chat:empty::before {
+  content: 'Click the mic to start';
+  color: #222; font-size: 14px; text-align: center;
+  margin: auto; display: block; padding-top: 40px;
+}
+.msg { display: flex; flex-direction: column; max-width: 85%; }
+.msg.user { align-self: flex-end; align-items: flex-end; }
+.msg.ai   { align-self: flex-start; align-items: flex-start; }
+.msg-label { font-size: 10px; color: #3a3a3a; margin-bottom: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
+.msg-bubble { padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.5; }
+.msg.user .msg-bubble { background: #1e3a5f; border-bottom-right-radius: 4px; }
+.msg.ai   .msg-bubble { background: #1a1a2e; border-bottom-left-radius: 4px; }
+
+/* Interim */
+#interim { color: #484848; font-size: 13px; font-style: italic; text-align: center; min-height: 18px; padding: 3px 0; }
+
+/* Status */
+#status-row {
+  font-size: 12px; text-align: center; padding: 3px 0 8px;
+  display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 24px;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; background: #222; flex-shrink: 0; }
+.dot.green  { background: #22c55e; animation: pulse 1.4s infinite; }
+.dot.yellow { background: #eab308; animation: pulse 1.4s infinite; }
+.dot.blue   { background: #6366f1; animation: pulse 1.4s infinite; }
+.dot.purple { background: #a855f7; animation: pulse 0.7s infinite; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+/* Bottom controls */
+#controls {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+
+/* Speed slider — always visible */
+#speed-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; max-width: 280px;
+}
+.speed-label { font-size: 11px; color: #444; }
+input[type=range] {
+  flex: 1; accent-color: #6366f1; cursor: pointer;
+  -webkit-appearance: none; height: 3px; background: #2a2a2a; border-radius: 2px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  border-radius: 50%; background: #6366f1; cursor: pointer;
+}
+#speed-val { font-size: 11px; color: #555; min-width: 28px; text-align: right; }
+
+/* Mic */
+#mic-btn {
+  width: 72px; height: 72px; border-radius: 50%; border: none;
+  background: #151520; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  outline: none; -webkit-tap-highlight-color: transparent; flex-shrink: 0;
+  transition: background 0.15s;
+}
+#mic-btn:hover { background: #1d1d2e; }
+#mic-btn.listening {
+  background: #4338ca;
+  box-shadow: 0 0 0 8px rgba(99,102,241,0.12), 0 0 0 16px rgba(99,102,241,0.06);
+  animation: glow-idle 2s ease-in-out infinite;
+}
+#mic-btn.user-speaking {
+  background: #7c3aed;
+  box-shadow: 0 0 0 8px rgba(124,58,237,0.18), 0 0 0 18px rgba(124,58,237,0.08);
+  animation: glow-speak 0.6s ease-in-out infinite;
+}
+#mic-btn.ai-speaking { background: #1e3050; }
+#mic-btn.processing  { background: #252510; cursor: default; }
+@keyframes glow-idle  { 0%,100%{box-shadow:0 0 0 8px rgba(99,102,241,.12),0 0 0 16px rgba(99,102,241,.06)} 50%{box-shadow:0 0 0 12px rgba(99,102,241,.18),0 0 0 24px rgba(99,102,241,.04)} }
+@keyframes glow-speak { 0%,100%{box-shadow:0 0 0 8px rgba(124,58,237,.18),0 0 0 18px rgba(124,58,237,.08)} 50%{box-shadow:0 0 0 14px rgba(124,58,237,.24),0 0 0 26px rgba(124,58,237,.05)} }
+#mic-btn svg { width: 28px; height: 28px; }
+#mic-hint { font-size: 11px; color: #333; }
+
+/* Waveform */
+#waveform { width: 220px; height: 32px; }
+
+/* Connection */
+#conn { position: fixed; top: 8px; right: 10px; font-size: 10px; color: #252525; letter-spacing: .06em; }
+#conn.live { color: #22c55e; }
+
+/* Debug */
+#dbg-panel {
+  position: fixed; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.95);
+  border-top: 1px solid #111; font-family: monospace; font-size: 10px; color: #0f0;
+  max-height: 140px; overflow-y: auto; padding: 4px 8px; display: none;
+}
+#dbg-panel.on { display: block; }
+#dbg-panel .e { color: #f44; }
+#dbg-panel .w { color: #fa0; }
+#dbg-btn {
+  position: fixed; bottom: 4px; right: 8px; z-index: 9;
+  background: none; border: 1px solid #1a1a1a; color: #333;
+  font-size: 10px; border-radius: 3px; padding: 1px 5px; cursor: pointer;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <button id="settings-toggle">SETTINGS ▾</button>
+  <div id="settings-panel">
+    <div class="s-row">
+      <span class="s-label">Voice</span>
+      <select id="voice-sel">
+        <option value="Friendly_Person">Friendly Person</option>
+        <option value="Casual_Guy">Casual Guy</option>
+        <option value="Deep_Voice_Man">Deep Voice Man</option>
+        <option value="Calm_Woman">Calm Woman</option>
+        <option value="Patient_Man">Patient Man</option>
+        <option value="Lively_Girl">Lively Girl</option>
+        <option value="Wise_Woman">Wise Woman</option>
+        <option value="Inspirational_girl">Inspirational Girl</option>
+      </select>
+    </div>
+    <textarea id="sys-prompt">You are a friendly and engaging conversational AI. Keep responses natural and concise — 2-4 sentences max. If the user has been talking for a long time without pause, gently redirect them.</textarea>
+  </div>
+
+  <div id="chat"></div>
+  <div id="interim"></div>
+
+  <div id="status-row">
+    <span class="dot" id="dot"></span>
+    <span id="status-txt">Connecting...</span>
+  </div>
+
+  <div id="controls">
+    <!-- Speed slider always visible -->
+    <div id="speed-row">
+      <span class="speed-label">Speed</span>
+      <input type="range" id="speed" min="0.5" max="2.0" step="0.1" value="1.0">
+      <span id="speed-val">1.0×</span>
+    </div>
+
+    <button id="mic-btn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="2" width="6" height="11" rx="3"/>
+        <path d="M19 10a7 7 0 0 1-14 0"/>
+        <line x1="12" y1="19" x2="12" y2="22"/>
+        <line x1="8"  y1="22" x2="16" y2="22"/>
+      </svg>
+    </button>
+    <span id="mic-hint">click to start</span>
+    <canvas id="waveform" width="220" height="32"></canvas>
+  </div>
+
+</div>
+<span id="conn">● OFFLINE</span>
+<div id="dbg-panel"></div>
+<button id="dbg-btn">dbg</button>
+
+<script>
+// ── Debug ─────────────────────────────────────────────────────────────────────
+const dbgPanel = document.getElementById('dbg-panel');
+document.getElementById('dbg-btn').onclick = () => dbgPanel.classList.toggle('on');
+function dbg(msg, cls='') {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = `[${new Date().toLocaleTimeString('en',{hour12:false})}] ${msg}`;
+  dbgPanel.appendChild(d);
+  dbgPanel.scrollTop = dbgPanel.scrollHeight;
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let convMode    = false;   // conversation on/off
+let aiSpeaking  = false;   // AI TTS playing (locally)
+let processing  = false;   // waiting for server
+
+let ws          = null;
+let rec         = null;
+let recRunning  = false;   // prevent double-start race
+let audioCtx    = null;
+let analyser    = null;
+let micStream   = null;
+let animFrame   = null;
+let audioSrc    = null;
+
+// Audio queue (per-sentence segments arrive separately)
+const audioQueue  = [];
+let queuePlaying  = false;
+let curChunks     = [];
+let recvingAudio  = false;
+let ttsStartedAt  = 0;   // when first audio_start in this turn received
+let speakingDone  = false; // server says all sentences sent
+
+let currentAIEl  = null;
+let lastSubmit   = { text: '', time: 0 };
+
+// 8-second user-speaking timer
+let speechStart  = 0;
+let speechTimer  = null;
+let lastInterim  = '';
+
+// ── DOM ───────────────────────────────────────────────────────────────────────
+const chatEl      = document.getElementById('chat');
+const interimEl   = document.getElementById('interim');
+const statusTxt   = document.getElementById('status-txt');
+const dotEl       = document.getElementById('dot');
+const micBtn      = document.getElementById('mic-btn');
+const micHint     = document.getElementById('mic-hint');
+const waveEl      = document.getElementById('waveform');
+const connEl      = document.getElementById('conn');
+const settBtn     = document.getElementById('settings-toggle');
+const settPanel   = document.getElementById('settings-panel');
+const voiceSel    = document.getElementById('voice-sel');
+const speedEl     = document.getElementById('speed');
+const speedVal    = document.getElementById('speed-val');
+const sysPrompt   = document.getElementById('sys-prompt');
+const wCtx        = waveEl.getContext('2d');
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+settBtn.onclick = () => {
+  settPanel.classList.toggle('open');
+  settBtn.textContent = settPanel.classList.contains('open') ? 'SETTINGS ▴' : 'SETTINGS ▾';
+};
+voiceSel.onchange = () => { sendJ({ type:'set_voice', voice_id: voiceSel.value }); dbg(`Voice: ${voiceSel.value}`); };
+speedEl.oninput = () => {
+  const v = parseFloat(speedEl.value).toFixed(1);
+  speedVal.textContent = v + '×';
+  sendJ({ type:'set_speed', speed: parseFloat(v) });
+};
+let ptimer;
+sysPrompt.oninput = () => { clearTimeout(ptimer); ptimer = setTimeout(() => sendJ({ type:'set_prompt', prompt: sysPrompt.value }), 500); };
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    connEl.textContent = '● LIVE'; connEl.className = 'live';
+    sendJ({ type:'set_voice', voice_id: voiceSel.value });
+    sendJ({ type:'set_speed', speed: parseFloat(speedEl.value) });
+    sendJ({ type:'set_prompt', prompt: sysPrompt.value });
+    setStatus('Ready', '');
+    dbg('WS connected');
+  };
+  ws.onclose = () => {
+    connEl.textContent = '● OFFLINE'; connEl.className = '';
+    setStatus('Reconnecting...', '');
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = (ev) => {
+    if (ev.data instanceof ArrayBuffer) {
+      if (recvingAudio) curChunks.push(ev.data);
+      return;
+    }
+    const m = JSON.parse(ev.data);
+    switch (m.type) {
+      case 'llm_chunk':
+        processing = false;
+        upsertAI(m.text);
+        break;
+      case 'llm_response':
+        upsertAI(m.text);  // final (clean) version
+        break;
+      case 'audio_start':
+        recvingAudio = true;
+        curChunks = [];
+        if (!aiSpeaking) {
+          aiSpeaking = true;
+          ttsStartedAt = Date.now();
+          speakingDone = false;
+          micBtn.className = 'ai-speaking';
+          micHint.textContent = 'speak to interrupt';
+          setStatus('Speaking...', 'blue');
+        }
+        dbg(`audio_start (queue len ${audioQueue.length})`);
+        break;
+      case 'audio_end': {
+        recvingAudio = false;
+        const bytes = curChunks.reduce((n,c) => n + c.byteLength, 0);
+        dbg(`audio_end — ${curChunks.length} chunks, ${bytes} bytes`);
+        if (bytes > 0) {
+          const merged = mergeChunks(curChunks);
+          audioQueue.push(merged);
+          if (!queuePlaying) playQueue();
+        }
+        curChunks = [];
+        break;
+      }
+      case 'speaking_done':
+        speakingDone = true;
+        dbg('speaking_done');
+        // If queue already drained, restart listening now
+        if (!queuePlaying && !audioQueue.length) afterSpeaking();
+        break;
+      case 'status':
+        if (m.message.startsWith('Error')) {
+          dbg(m.message, 'e');
+          setStatus(m.message, '');
+          processing = false; aiSpeaking = false;
+          if (convMode) setTimeout(startRec, 600);
+        } else {
+          const c = m.message==='Thinking...' ? 'yellow' : m.message==='Speaking...' ? 'blue' : '';
+          if (!aiSpeaking) setStatus(m.message, c);
+        }
+        break;
+    }
+  };
+}
+function sendJ(o) { if (ws && ws.readyState===1) ws.send(JSON.stringify(o)); }
+
+// ── Mic button ────────────────────────────────────────────────────────────────
+micBtn.addEventListener('click', async () => {
+  // MUST create AudioContext on user gesture
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    dbg(`AudioContext created: ${audioCtx.state}`);
+  }
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+    dbg(`AudioContext resumed: ${audioCtx.state}`);
+  }
+
+  if (!convMode) {
+    startConv();
+  } else {
+    stopConv();
+  }
+});
+
+function startConv() {
+  if (!SpeechAPI) { setStatus('Use Chrome or Safari', ''); return; }
+  convMode = true;
+  micHint.textContent = 'click to stop';
+  dbg('Conversation started');
+  startRec();
+}
+
+function stopConv() {
+  convMode = false; processing = false; aiSpeaking = false;
+  stopRec(); stopAllAudio();
+  micBtn.className = ''; micHint.textContent = 'click to start';
+  interimEl.textContent = '';
+  setStatus('Ready', '');
+  dbg('Conversation stopped');
+}
+
+// ── Speech Recognition ────────────────────────────────────────────────────────
+const SpeechAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function startRec() {
+  if (!convMode || !SpeechAPI) return;
+  if (recRunning) { dbg('startRec: already running'); return; }  // ← prevents double-start
+  recRunning = true;
+
+  if (rec) { try { rec.abort(); } catch(e){} }
+  rec = new SpeechAPI();
+  rec.continuous = false;
+  rec.interimResults = true;
+  rec.lang = 'en-US';
+
+  rec.onstart = () => {
+    dbg('rec started');
+    if (!processing && !aiSpeaking) {
+      micBtn.className = 'listening';
+      setStatus('Listening...', 'green');
+    }
+    startWaveform();
+  };
+
+  rec.onresult = (ev) => {
+    // Echo guard: if TTS just started, the mic may pick up the speaker
+    const msSinceTTS = Date.now() - ttsStartedAt;
+    if (aiSpeaking && msSinceTTS < 1500) {
+      dbg(`Echo guard: ignoring result ${msSinceTTS}ms after TTS start`, 'w');
+      return;
+    }
+
+    let interim = '', final = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) final += t;
+      else interim += t;
+    }
+
+    interimEl.textContent = interim || (final ? '' : '');
+    if (interim) lastInterim = interim;
+
+    // Show user is actively speaking
+    if ((interim || final) && !processing) {
+      micBtn.className = 'user-speaking';
+      setStatus('You\'re speaking...', 'purple');
+
+      // 8-second timer: force submit if user rambles
+      if (!speechStart) {
+        speechStart = Date.now();
+        speechTimer = setTimeout(() => {
+          const t = lastInterim.trim() || final.trim();
+          if (t && convMode && !processing) {
+            dbg(`8s interrupt: submitting "${t}"`, 'w');
+            submit(t);
+          }
+        }, 8000);
+      }
+    }
+
+    if (final.trim()) {
+      clearSpeechTimer();
+      interimEl.textContent = '';
+
+      // Deduplicate
+      const now = Date.now();
+      if (final.trim() === lastSubmit.text && now - lastSubmit.time < 4000) {
+        dbg(`Dedup: ignored "${final.trim()}"`, 'w');
+        return;
+      }
+      submit(final.trim());
+    }
+  };
+
+  rec.onerror = (ev) => {
+    recRunning = false;
+    if (ev.error === 'aborted' || ev.error === 'no-speech') {
+      if (convMode && !processing) setTimeout(startRec, 100);
+      return;
+    }
+    dbg(`rec error: ${ev.error}`, 'e');
+    if (convMode) setTimeout(startRec, 800);
+  };
+
+  rec.onend = () => {
+    recRunning = false;
+    dbg('rec ended');
+    clearSpeechTimer();
+    // Auto-restart unless we're in the middle of processing (but still restart if AI speaking)
+    if (convMode && !processing) setTimeout(startRec, 100);
+  };
+
+  try { rec.start(); }
+  catch(e) { recRunning = false; dbg(`rec.start() threw: ${e}`, 'e'); }
+}
+
+function stopRec() {
+  recRunning = false;
+  clearSpeechTimer();
+  if (rec) { try { rec.abort(); } catch(e){} rec = null; }
+  stopWaveform();
+}
+
+function clearSpeechTimer() {
+  if (speechTimer) { clearTimeout(speechTimer); speechTimer = null; }
+  speechStart = 0; lastInterim = '';
+}
+
+function submit(text) {
+  lastSubmit = { text, time: Date.now() };
+  clearSpeechTimer();
+  processing = true;
+
+  // If AI was speaking, interrupt it
+  if (aiSpeaking) {
+    stopAllAudio();
+    dbg(`User interrupted AI with: "${text}"`);
+  }
+
+  // Don't stop recognition — keep mic open (auto-handles itself via onend)
+  micBtn.className = 'processing';
+  micHint.textContent = 'thinking…';
+  interimEl.textContent = '';
+  addUser(text);
+  setStatus('Thinking...', 'yellow');
+  sendJ({ type: 'user_message', text });
+  dbg(`Submitted: "${text}"`);
+}
+
+// ── Audio queue ───────────────────────────────────────────────────────────────
+function mergeChunks(chunks) {
+  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { out.set(new Uint8Array(c), off); off += c.byteLength; }
+  return out.buffer;
+}
+
+async function playQueue() {
+  if (!audioQueue.length) {
+    queuePlaying = false;
+    if (speakingDone) afterSpeaking();
+    return;
+  }
+  queuePlaying = true;
+  const buf = audioQueue.shift();
+
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+    const decoded = await audioCtx.decodeAudioData(buf);
+    audioSrc = audioCtx.createBufferSource();
+    audioSrc.buffer = decoded;
+    audioSrc.connect(audioCtx.destination);
+    audioSrc.onended = () => {
+      audioSrc = null;
+      playQueue(); // play next segment or call afterSpeaking
+    };
+    audioSrc.start();
+    dbg(`Playing segment ${decoded.duration.toFixed(2)}s`);
+  } catch(e) {
+    dbg(`playQueue decode error: ${e}`, 'e');
+    queuePlaying = false;
+    if (speakingDone) afterSpeaking();
+  }
+}
+
+function afterSpeaking() {
+  aiSpeaking = false;
+  dbg('All audio done → returning to listen');
+  if (convMode) {
+    micBtn.className = '';
+    micHint.textContent = 'click to stop';
+    // Small gap so echo fades before next recognition result is counted
+    setTimeout(() => {
+      ttsStartedAt = 0;  // reset echo guard
+      if (!processing && convMode) {
+        setStatus('Listening...', 'green');
+        micBtn.className = 'listening';
+        // Recognition already auto-restarted via onend; just in case:
+        if (!recRunning) startRec();
+      }
+    }, 350);
+  } else {
+    micBtn.className = ''; micHint.textContent = 'click to start';
+    setStatus('Ready', '');
+  }
+}
+
+function stopAllAudio() {
+  audioQueue.length = 0;
+  queuePlaying = false;
+  aiSpeaking = false;
+  if (audioSrc) { try { audioSrc.stop(); } catch(e){} audioSrc = null; }
+}
+
+// ── Waveform ──────────────────────────────────────────────────────────────────
+async function startWaveform() {
+  try {
+    if (!micStream) micStream = await navigator.mediaDevices.getUserMedia(
+      { audio: { echoCancellation: true, noiseSuppression: true } }
+    );
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (analyser) return;
+    analyser = audioCtx.createAnalyser(); analyser.fftSize = 64;
+    audioCtx.createMediaStreamSource(micStream).connect(analyser);
+    drawWave();
+  } catch(e) { dbg(`Waveform: ${e}`, 'w'); }
+}
+function stopWaveform() {
+  if (animFrame) { cancelAnimationFrame(animFrame); animFrame = null; }
+  analyser = null;
+  wCtx.clearRect(0, 0, 220, 32);
+  wCtx.strokeStyle = '#1a1a1a'; wCtx.lineWidth = 1;
+  wCtx.beginPath(); wCtx.moveTo(0, 16); wCtx.lineTo(220, 16); wCtx.stroke();
+}
+function drawWave() {
+  animFrame = requestAnimationFrame(drawWave);
+  wCtx.clearRect(0, 0, 220, 32);
+  if (!analyser) return;
+  const b = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteFrequencyData(b);
+  const bw = 220 / b.length;
+  const speaking = micBtn.classList.contains('user-speaking');
+  for (let i = 0; i < b.length; i++) {
+    const h = (b[i]/255)*30;
+    wCtx.fillStyle = speaking ? 'rgba(124,58,237,.75)' : 'rgba(99,102,241,.55)';
+    wCtx.fillRect(i*bw+1, 16-h, bw-2, h*2);
+  }
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function addUser(text) {
+  currentAIEl = null;
+  const el = document.createElement('div');
+  el.className = 'msg user';
+  el.innerHTML = `<div class="msg-label">You</div><div class="msg-bubble">${esc(text)}</div>`;
+  chatEl.appendChild(el); chatEl.scrollTop = chatEl.scrollHeight;
+}
+function upsertAI(text) {
+  if (!currentAIEl) {
+    const el = document.createElement('div');
+    el.className = 'msg ai';
+    el.innerHTML = `<div class="msg-label">AI</div><div class="msg-bubble"></div>`;
+    chatEl.appendChild(el);
+    currentAIEl = el.querySelector('.msg-bubble');
+  }
+  currentAIEl.textContent = text;
+  chatEl.scrollTop = chatEl.scrollHeight;
+}
+function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Status ────────────────────────────────────────────────────────────────────
+function setStatus(text, color) {
+  statusTxt.textContent = text;
+  dotEl.className = 'dot' + (color ? ' '+color : '');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+stopWaveform();
+connect();
+</script>
+</body>
+</html>
