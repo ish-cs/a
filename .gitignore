@@ -1,0 +1,7 @@
+.DS_Store
+app/.venv/
+app/__pycache__/
+app/*.pyc
+app/*.pyo
+app/*.wav
+app/.env
